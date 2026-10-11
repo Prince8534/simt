@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Compiled simulation executables
+*_sim
+*_sim.log
+*_regression_sim
+*_regression.log
+*_build.log
+nested_sim
+nested_tb_sim
+divergence_sim
+divergence_tb_sim
+lane_sim
+mask_sim
+join_sim
+ipdom_sim
+pc_sim
+imem_sim
+core_sim
+decoder_sim
+execute_sim
+
+# Waveforms and simulator output
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+
+# Generated assembler and analysis outputs
+*.hex
+*.lst
+*.ipdom
+*.cfg.json
+
+# Generated Verilog lookup table
+simt_ipdom_lookup.v
