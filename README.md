@@ -73,23 +73,84 @@ The values below are the expected results recorded by the existing kernel testbe
 
 The counters sample clock cycles; they do not count retired instructions. These numbers are simulation results, not physical timing, throughput, or FPGA performance measurements.
 
-## Project structure
+## Architecture and execution flow
 
-- `simt_top.v` — integrated top-level design
-- `simt_core.v`, `simt_lane.v` — core and lane components
-- `simt_decoder.v`, `simt_alu.v` — instruction decoder and ALU
-- `simt_thread_mask.v`, `simt_split.v` — supporting mask/split modules
-- `simt_divergence_controller.v`, `ipdom_stack.v`, `simt_join_control.v` — divergence and reconvergence support
-- `simt_metrics.v` — sampled execution metrics
-- `assembler.py`, `test_assembler.py` — assembler and its unit tests
-- `test_ipdom_tools.py` — checks that unsupported control flow and unsafe IPDOM metadata are rejected
-- `simt_ipdom_analyzer.py` — analysis for the project's structured JOIN convention
-- `simt_ipdom_to_verilog.py` — IPDOM lookup-module generator
-- `*_kernel.asm`, `*_kernel_runner_tb.v` — regression kernels and testbenches
-- `cfg_controller_tb.v` — divergent and uniform branch-control cases
-- `simt_missing_ipdom_tb.v` — negative test for missing reconvergence metadata
-- `run_simt_regression.sh` — complete regression entry point
-- `build_simt_kernel.sh` — build/test one kernel
+The integrated execution path is organized around these signals and responsibilities:
+
+1. **Fetch:** `simt_pc` provides the shared byte-addressed PC to `simt_instruction_memory`; the fetched instruction is shared by all lanes.
+2. **Decode:** `simt_decoder` extracts instruction fields and control signals. Decoder recognition does not imply every decoded instruction is fully implemented by the integrated top.
+3. **Lane execution and branch predicates:** the lane datapath performs supported ALU operations; branch comparison produces one predicate bit per lane.
+4. **Divergence control:** `simt_cfg_controller` identifies uniform or divergent branch outcomes. For a divergent branch, the integrated controller uses generated IPDOM metadata and the divergence stack to schedule the taken and deferred paths.
+5. **Reconvergence:** `JOIN` instructions follow the project's structured branch/JOIN convention to resume deferred execution and eventually restore the reconverged lane mask. Nested divergence is covered by the nested-kernel regression.
+6. **Metrics:** `simt_metrics` samples clock cycles and active-lane counts to report useful lane-cycles, masked lane-cycles, and integer lane efficiency.
+
+The standalone modules and alternative control-path testbenches are useful for isolated experiments; they should not be mistaken for proof that every standalone feature is wired into `simt_top`. The module reference below distinguishes these roles.
+
+## IC-style module pin diagrams
+
+The repository includes a 27-page PDF showing selected modules' Verilog ports in an IC-style layout: inputs on the left, outputs on the right, and bus widths beside signals.
+
+**[Open the IC-style Verilog pin diagrams](docs/simt_ic_style_pin_diagrams.pdf)**
+
+These are *logical module interfaces*, not physical IC pin numbers. They are useful for understanding module connections and explaining the design in a presentation or report.
+
+## Module reference
+
+The project contains both the integrated processor path and standalone/alternative modules used for focused experiments. A module appearing in this list does not necessarily mean it is instantiated by `simt_top`.
+
+### Integrated datapath and instruction front end
+
+| Module | Function |
+|---|---|
+| `simt_top` | Main integrated simulation top. Connects the shared frontend, instruction decode, eight-lane execution, branch/divergence control, thread mask, and execution metrics. Exposes PC, instruction, mask/control signals, and counters for testbenches. |
+| `simt_frontend` | Groups the shared program counter and instruction memory. Supplies the current PC and fetched instruction. |
+| `simt_pc` | Holds the shared 32-bit byte-addressed PC; loads `next_pc` on a rising clock edge and resets to zero. |
+| `simt_instruction_memory` | Combinational instruction lookup using `address[9:2]` into a 256-word array. Initializes words to the RISC-V NOP encoding; regression testbenches load assembled HEX files. |
+| `simt_decoder` | Decodes instruction fields, immediates, ALU operation, register-write, memory, branch, jump, and custom SIMT control signals. Decoder recognition alone does not guarantee top-level execution support. |
+| `simt_decode_stage` | Wrapper around `simt_decoder`, forwarding decoded fields and control signals. |
+| `simt_frontend_decode` | Combines the shared frontend and decoder into a single convenience stage. |
+| `simt_core` | Instantiates eight `simt_lane` units and broadcasts decoded operands/control while using one active-thread mask to enable lane writes. |
+| `simt_lane` | One lane's 32-register state and ALU path. Reads x0 as zero and suppresses register writes when the lane is inactive or the destination is x0. |
+| `simt_alu` | Combinational arithmetic/logic unit for the supported ALU control encodings; produces result and status flags. |
+| `simt_execute_stage` | Adapts ALU control and exposes the eight-lane core for execution-stage tests. |
+| `simt_execution_top` | Combines the shared lane datapath with per-lane branch comparison to expose lane operand data and the predicate mask. |
+
+### Branch, divergence, and reconvergence control
+
+| Module | Function |
+|---|---|
+| `simt_branch_compare` | Compares source operands independently for each of the eight lanes and produces an 8-bit predicate mask. |
+| `simt_branch_execute` | Connects branch comparison to branch-control decisions in a standalone execution/control path. |
+| `simt_branch_control` | Calculates branch target/fall-through PC choices and identifies uniform versus divergent branch outcomes. |
+| `simt_cfg_controller` | Derives taken and deferred masks and PCs from the branch predicate mask; signals uniform-taken, uniform-fall-through, or divergent control flow. |
+| `simt_branch_divergence` | Standalone branch-divergence control composition used by control-path experiments. |
+| `simt_control_flow` | Combines branch decisions and divergence/reconvergence control into a control-flow subsystem. |
+| `simt_control_top` | Standalone top for exercising the shared frontend and control-flow path without the full integrated execution/metrics path. |
+| `simt_thread_mask` | Clocked 8-bit active-thread mask register with reset-to-all-active and a TMC mask input for standalone use. |
+| `simt_split` | Computes `taken_mask = thread_mask & predicate_mask` and `deferred_mask = thread_mask & ~predicate_mask`. |
+| `simt_split_control` | Standalone split/JOIN controller that selects the next PC and mask and produces IPDOM stack push/pop data. |
+| `simt_divergence_controller` | Manages divergent execution: saves deferred-path state on a split, executes one path, and uses JOIN events to restore deferred execution and reconverge. |
+| `simt_join_control` | Implements the JOIN path-state decision using the top IPDOM entry, choosing deferred-path execution or final reconvergence. |
+| `ipdom_stack` | Eight-entry stack storing deferred masks/PCs, reconvergence PCs/masks, and path state for nested divergence. Exposes empty/full and top-entry information. |
+| `simt_masked_execute` | Combines a lane-parallel execution datapath with active-mask and divergence-controller state for focused masked-execution tests. |
+
+### Metrics, assembler, and verification
+
+| File/module | Function |
+|---|---|
+| `simt_metrics` | Counts sampled cycles, useful lane-cycles, and masked lane-cycles, then calculates integer lane efficiency. Counters are cycle-based, not retired-instruction counts. |
+| `assembler.py` | Converts the project's assembly syntax and supported instruction encodings into machine-code HEX and a listing. |
+| `simt_ipdom_analyzer.py` | Analyzes the project's structured forward-branch/JOIN convention and emits IPDOM metadata. It is not a general arbitrary-CFG analyzer. |
+| `simt_ipdom_to_verilog.py` | Validates supported IPDOM metadata and generates a Verilog lookup module for branch reconvergence addresses. |
+| `test_assembler.py` | Unit tests for assembler encodings, labels, register names, operand counts, and immediate ranges. |
+| `test_ipdom_tools.py` | Negative tests for unsupported control-flow structures and unsafe/unknown IPDOM metadata. |
+| `cfg_controller_tb.v` | Checks divergent, uniform-taken, and uniform-fall-through branch-control cases. |
+| `simt_missing_ipdom_tb.v` | Confirms that executing a divergent branch without the required IPDOM metadata is rejected in simulation. |
+| `*_kernel.asm` | Example uniform, divergent, and nested-divergence assembly kernels used by the regression suite. |
+| `*_kernel_runner_tb.v` | Testbenches that load assembled HEX files and check lane values, masks, reconvergence, and metrics. |
+| `run_simt_regression.sh` | Runs Python unit tests, the three assembled-kernel regressions, branch-control tests, and the missing-IPDOM negative test. |
+| `build_simt_kernel.sh` | Assembles, analyzes, generates lookup logic, compiles, and simulates one kernel. |
+
 
 ## Limitations
 
