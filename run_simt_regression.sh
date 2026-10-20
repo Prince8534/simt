@@ -3,6 +3,20 @@ set -Eeuo pipefail
 
 cd "$(dirname "$0")"
 
+# Run software-side tests even when HDL simulation tools are unavailable.
+echo "========================================"
+echo " PYTHON UNIT TESTS"
+echo "========================================"
+python3 -m unittest -v test_assembler.py test_ipdom_tools.py
+
+for tool in iverilog vvp; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "ERROR: Required HDL tool '$tool' was not found on PATH." >&2
+        echo "Install Icarus Verilog to run the HDL kernel regression." >&2
+        exit 2
+    fi
+done
+
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -142,12 +156,56 @@ else
     FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+
+echo
+echo "========================================"
+echo " BRANCH-CONTROL UNIT TEST"
+echo "========================================"
+if iverilog -g2012 -s cfg_controller_tb -o cfg_controller_regression_sim \
+    simt_cfg_controller.v cfg_controller_tb.v; then
+    if vvp cfg_controller_regression_sim 2>&1 | tee cfg_controller_regression.log \
+        && grep -Fq "ALL CFG CONTROLLER CHECKS PASSED" cfg_controller_regression.log; then
+        echo "PASS: branch-control cases"
+    else
+        echo "FAIL: branch-control cases"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+else
+    echo "FAIL: branch-control compilation"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+echo
+echo "========================================"
+echo " MISSING-IPDOM NEGATIVE TEST"
+echo "========================================"
+# The nested-kernel build leaves a lookup that intentionally has no entry
+# for PC 0x04, which the negative test uses for a divergent branch.
+if iverilog -g2012 -s simt_missing_ipdom_tb \
+    -o simt_missing_ipdom_regression_sim \
+    "${COMMON_SOURCES[@]}" simt_missing_ipdom_tb.v; then
+    if vvp simt_missing_ipdom_regression_sim > simt_missing_ipdom_regression.log 2>&1; then
+        echo "FAIL: missing IPDOM metadata was not rejected"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    elif grep -Fq "Cannot execute divergent split without IPDOM metadata" \
+        simt_missing_ipdom_regression.log; then
+        echo "PASS: missing IPDOM metadata rejected"
+    else
+        echo "FAIL: simulation stopped for an unexpected reason"
+        cat simt_missing_ipdom_regression.log
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+else
+    echo "FAIL: missing-IPDOM test compilation"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
 echo
 echo "========================================"
 echo " REGRESSION SUMMARY"
 echo "========================================"
 echo "Passed kernels: $PASS_COUNT"
-echo "Failed kernels: $FAIL_COUNT"
+echo "Failed checks:  $FAIL_COUNT"
 
 if [[ "$PASS_COUNT" -eq 3 && "$FAIL_COUNT" -eq 0 ]]; then
     echo "ALL SIMT REGRESSION TESTS PASSED"

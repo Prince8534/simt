@@ -8,6 +8,13 @@ fi
 
 KERNEL="$1"
 
+for tool in python3 iverilog vvp; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "ERROR: Required tool '$tool' was not found on PATH." >&2
+        exit 2
+    fi
+done
+
 if [[ ! -f "$KERNEL" ]]; then
     echo "ERROR: Kernel not found: $KERNEL" >&2
     exit 1

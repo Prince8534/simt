@@ -19,6 +19,7 @@ module cfg_controller_tb;
     wire branch_taken;
     wire branch_fallthrough;
     wire split;
+    integer failures = 0;
 
     simt_cfg_controller dut (
         .current_pc(current_pc),
@@ -80,16 +81,19 @@ module cfg_controller_tb;
         $display("split            = %b", split);
 
         if (taken_pc != 32'h00000120)
-            $display("FAIL: taken_pc");
+            begin $display("FAIL: taken_pc"); failures = failures + 1; end
 
         else if (deferred_pc != 32'h00000104)
-            $display("FAIL: deferred_pc");
+            begin $display("FAIL: deferred_pc"); failures = failures + 1; end
 
         else if (!divergence)
-            $display("FAIL: divergence");
+            begin $display("FAIL: divergence"); failures = failures + 1; end
 
         else if (!split)
-            $display("FAIL: split");
+            begin $display("FAIL: split"); failures = failures + 1; end
+
+        else if (branch_taken || branch_fallthrough)
+            begin $display("FAIL: divergent branch classified as uniform"); failures = failures + 1; end
 
         else
             $display("PASS: divergent branch");
@@ -113,10 +117,10 @@ module cfg_controller_tb;
         $display("divergence       = %b", divergence);
 
         if (!branch_taken)
-            $display("FAIL: uniform taken");
+            begin $display("FAIL: uniform taken"); failures = failures + 1; end
 
         else if (divergence)
-            $display("FAIL: false divergence");
+            begin $display("FAIL: false divergence"); failures = failures + 1; end
 
         else
             $display("PASS: uniform taken");
@@ -140,10 +144,10 @@ module cfg_controller_tb;
         $display("divergence       = %b", divergence);
 
         if (!branch_fallthrough)
-            $display("FAIL: uniform fall-through");
+            begin $display("FAIL: uniform fall-through"); failures = failures + 1; end
 
         else if (divergence)
-            $display("FAIL: false divergence");
+            begin $display("FAIL: false divergence"); failures = failures + 1; end
 
         else
             $display("PASS: uniform fall-through");
@@ -153,6 +157,11 @@ module cfg_controller_tb;
         $display("====================================");
         $display(" CFG CONTROLLER TEST COMPLETE");
         $display("====================================");
+
+        if (failures != 0)
+            $fatal(1, "CFG controller test failed with %0d failure(s)", failures);
+        else
+            $display("ALL CFG CONTROLLER CHECKS PASSED");
 
         $finish;
     end
