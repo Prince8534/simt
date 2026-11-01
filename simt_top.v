@@ -17,10 +17,19 @@ module simt_top (
     output wire [63:0] total_cycles,
     output wire [63:0] useful_lane_cycles,
     output wire [63:0] masked_lane_cycles,
-    output wire [31:0] efficiency_percent
+    output wire [31:0] efficiency_percent,
+    output reg halted
 );
 
     reg [7:0] thread_mask_reg;
+
+    // Global kernel termination state.
+    always @(posedge clk) begin
+        if (reset)
+            halted <= 1'b0;
+        else if (!halted && ebreak)
+            halted <= 1'b1;
+    end
 
     wire [31:0] control_next_pc;
     wire [31:0] next_pc;
@@ -121,6 +130,8 @@ module simt_top (
         .alu_src_imm(lane_alu_src_imm),
         .immediate(immediate),
         .reg_write(
+            !halted &&
+            !ebreak &&
             reg_write &&
             !branch &&
             !join_instr &&
@@ -232,7 +243,9 @@ module simt_top (
     // --------------------------------------------------------
 
     assign control_next_pc =
-        cfg_split
+        (halted || ebreak)
+            ? current_pc
+        : cfg_split
             ? divergence_next_pc
         : join_instr
             ? divergence_next_pc
@@ -256,7 +269,7 @@ module simt_top (
     always @(posedge clk) begin
         if (reset)
             thread_mask_reg <= 8'b11111111;
-        else
+        else if (!halted && !ebreak)
             thread_mask_reg <= control_next_mask;
     end
 
@@ -292,7 +305,8 @@ module simt_top (
     // --------------------------------------------------------
 
     wire metrics_sample_enable;
-    assign metrics_sample_enable = !reset;
+    // Count the EBREAK instruction itself, but not halted cycles.
+    assign metrics_sample_enable = !reset && !halted;
 
     simt_metrics #(
         .LANES(8),
