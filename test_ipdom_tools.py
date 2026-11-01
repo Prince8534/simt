@@ -1,4 +1,5 @@
-"""Regression tests for conservative IPDOM metadata generation."""
+"""Regression tests for IPDOM analysis and loadable metadata conversion."""
+
 import json
 import subprocess
 import sys
@@ -7,6 +8,7 @@ import unittest
 from pathlib import Path
 
 import simt_ipdom_analyzer
+import simt_ipdom_to_mem
 
 ROOT = Path(__file__).resolve().parent
 
@@ -24,41 +26,71 @@ class IpdomAnalyzerTests(unittest.TestCase):
             self.analyze_source("start:\n  beq x1, x2, start\n")
 
     def test_rejects_branch_without_fallthrough_join(self):
-        source = "beq x1, x2, target\nnop\ntarget:\n  nop\n"
         with self.assertRaisesRegex(ValueError, "no fallthrough JOIN"):
-            self.analyze_source(source)
+            self.analyze_source("beq x1, x2, target\nnop\ntarget:\n  nop\n")
 
 
-class IpdomConverterTests(unittest.TestCase):
-    def run_converter(self, metadata):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            source = tmp_path / "metadata.json"
-            output = tmp_path / "lookup.v"
-            source.write_text(json.dumps(metadata), encoding="utf-8")
-            return subprocess.run(
-                [sys.executable, str(ROOT / "simt_ipdom_to_verilog.py"),
-                 str(source), "-o", str(output)],
-                capture_output=True, text=True, check=False,
-            )
-
-    def test_rejects_unknown_metadata_format(self):
-        result = self.run_converter({
-            "format": "unknown-format",
-            "hardware_metadata_safe": True,
-            "branch_to_reconvergence": {"0x00000000": "0x00000010"},
-        })
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported metadata format", result.stderr)
-
-    def test_rejects_metadata_not_marked_safe(self):
-        result = self.run_converter({
+class IpdomMemoryConverterTests(unittest.TestCase):
+    def valid_metadata(self):
+        return {
             "format": "simt-ipdom-v1",
-            "hardware_metadata_safe": False,
-            "branch_to_reconvergence": {"0x00000000": "0x00000010"},
+            "hardware_metadata_safe": True,
+            "regions": [{
+                "branch_pc": "0x00000004",
+                "reconvergence_pc": "0x00000018",
+                "fallthrough_join_pc": "0x0000000c",
+                "taken_join_pc": "0x00000014"
+            }],
+            "branch_to_reconvergence": {
+                "0x00000004": "0x00000018"
+            }
+        }
+
+    def test_generates_branch_and_join_records(self):
+        branches, joins = simt_ipdom_to_mem.convert(self.valid_metadata())
+        self.assertEqual(branches, ["0000000400000018"])
+        self.assertEqual(
+            joins,
+            ["0000000c0000000400000018", "000000140000000400000018"]
+        )
+
+    def test_empty_metadata_generates_sentinels(self):
+        data = self.valid_metadata()
+        data["regions"] = []
+        data["branch_to_reconvergence"] = {}
+        branches, joins = simt_ipdom_to_mem.convert(data)
+        self.assertEqual(branches, ["ffffffffffffffff"])
+        self.assertEqual(joins, ["ffffffffffffffffffffffff"])
+
+    def test_rejects_unknown_format(self):
+        data = self.valid_metadata()
+        data["format"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "unsupported metadata format"):
+            simt_ipdom_to_mem.convert(data)
+
+    def test_rejects_unsafe_metadata(self):
+        data = self.valid_metadata()
+        data["hardware_metadata_safe"] = False
+        with self.assertRaisesRegex(ValueError, "not marked"):
+            simt_ipdom_to_mem.convert(data)
+
+    def test_rejects_inconsistent_branch_mapping(self):
+        data = self.valid_metadata()
+        data["branch_to_reconvergence"]["0x00000004"] = "0x00000020"
+        with self.assertRaisesRegex(ValueError, "inconsistent"):
+            simt_ipdom_to_mem.convert(data)
+
+    def test_rejects_duplicate_join_pc(self):
+        data = self.valid_metadata()
+        data["regions"].append({
+            "branch_pc": "0x00000020",
+            "reconvergence_pc": "0x00000030",
+            "fallthrough_join_pc": "0x0000000c",
+            "taken_join_pc": "0x00000028"
         })
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not marked hardware_metadata_safe", result.stderr)
+        data["branch_to_reconvergence"]["0x00000020"] = "0x00000030"
+        with self.assertRaisesRegex(ValueError, "duplicate/overlapping JOIN"):
+            simt_ipdom_to_mem.convert(data)
 
 
 if __name__ == "__main__":

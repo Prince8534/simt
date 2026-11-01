@@ -4,12 +4,15 @@ cd "$(dirname "$0")"
 
 # ============================================================
 # MINI SIMT CORE REGRESSION SUITE
+# Uses one generic simt_ipdom_lookup.v module and loadable
+# branch/JOIN metadata memory files.
 # ============================================================
 
 PASS_COUNT=0
 FAIL_COUNT=0
-
 LOG_DIR="regression_build/logs"
+BRANCH_METADATA="simt_branch_metadata.mem"
+JOIN_METADATA="simt_join_metadata.mem"
 
 mkdir -p "$LOG_DIR"
 
@@ -46,10 +49,6 @@ COMMON_SOURCES=(
     simt_top.v
 )
 
-# ------------------------------------------------------------
-# Utility functions
-# ------------------------------------------------------------
-
 pass() {
     echo "[PASS] $1"
     PASS_COUNT=$((PASS_COUNT + 1))
@@ -62,59 +61,36 @@ fail() {
 
 check_files() {
     local missing=0
-
     for file in "$@"; do
         if [[ ! -f "$file" ]]; then
             echo "Missing required file: $file"
             missing=1
         fi
     done
-
     return "$missing"
 }
 
 check_common_sources() {
     local missing=0
-
     for file in "${COMMON_SOURCES[@]}"; do
         if [[ ! -f "$file" ]]; then
             echo "Missing RTL source: $file"
             missing=1
         fi
     done
-
     return "$missing"
 }
 
 # ------------------------------------------------------------
-# Empty IPDOM lookup module
+# Empty metadata files
 #
-# Used for uniform kernels, controller tests and the
-# negative missing-IPDOM test.
+# Used by kernels/tests that do not execute divergent branches.
+# The generic RTL initializes unused table entries to all ones.
 # ------------------------------------------------------------
 
-write_empty_lookup() {
-    cat > simt_ipdom_lookup.v <<'EOF'
-module simt_ipdom_lookup (
-    input  wire [31:0] branch_pc,
-    output wire [31:0] reconvergence_pc,
-    output wire        metadata_found,
-
-    input  wire [31:0] join_pc,
-    output wire [31:0] join_owner_branch_pc,
-    output wire [31:0] join_reconvergence_pc,
-    output wire        join_metadata_found
-);
-
-    assign reconvergence_pc       = 32'b0;
-    assign metadata_found         = 1'b0;
-
-    assign join_owner_branch_pc   = 32'b0;
-    assign join_reconvergence_pc  = 32'b0;
-    assign join_metadata_found    = 1'b0;
-
-endmodule
-EOF
+write_empty_metadata() {
+    printf '%s\n' "ffffffffffffffff" > "$BRANCH_METADATA"
+    printf '%s\n' "ffffffffffffffffffffffff" > "$JOIN_METADATA"
 }
 
 # ------------------------------------------------------------
@@ -141,7 +117,6 @@ run_testbench() {
         "${COMMON_SOURCES[@]}" \
         "$testbench" \
         >"$compile_log" 2>&1; then
-
         cat "$compile_log"
         fail "$test_name - compilation"
         return
@@ -171,7 +146,6 @@ run_testbench() {
 run_missing_ipdom_test() {
     local test_name="MISSING_IPDOM"
     local testbench="simt_missing_ipdom_tb.v"
-
     local executable="$LOG_DIR/${test_name}.out"
     local compile_log="$LOG_DIR/${test_name}_compile.log"
     local simulation_log="$LOG_DIR/${test_name}_simulation.log"
@@ -181,7 +155,7 @@ run_missing_ipdom_test() {
         return
     fi
 
-    write_empty_lookup
+    write_empty_metadata
 
     if ! iverilog -g2012 \
         -s simt_missing_ipdom_tb \
@@ -189,15 +163,12 @@ run_missing_ipdom_test() {
         "${COMMON_SOURCES[@]}" \
         "$testbench" \
         >"$compile_log" 2>&1; then
-
         cat "$compile_log"
         fail "$test_name - compilation"
         return
     fi
 
-    # This simulation is expected to terminate with $fatal.
     local simulation_status=0
-
     vvp "$executable" >"$simulation_log" 2>&1 \
         || simulation_status=$?
 
@@ -205,7 +176,6 @@ run_missing_ipdom_test() {
 
     if [[ "$simulation_status" -ne 0 ]] &&
        grep -Fq "Cannot execute divergent split without IPDOM metadata" "$simulation_log"; then
-
         pass "$test_name - expected fatal detected"
     else
         echo "Expected a nonzero exit and the missing-IPDOM fatal message."
@@ -221,6 +191,7 @@ run_missing_ipdom_test() {
 echo
 echo "============================================================"
 echo "          MINI SIMT CORE REGRESSION SUITE"
+echo "          LOADABLE IPDOM METADATA FLOW"
 echo "============================================================"
 
 # ------------------------------------------------------------
@@ -240,16 +211,20 @@ done
 pass "Required tools available"
 
 # ------------------------------------------------------------
-# 2. RTL source files
+# 2. RTL and metadata tool files
 # ------------------------------------------------------------
 
 echo
-echo "[2/12] Checking RTL source files..."
+echo "[2/12] Checking RTL and metadata tool files..."
 
-if check_common_sources; then
-    pass "RTL source files present"
+if check_common_sources && check_files \
+    assembler.py \
+    simt_ipdom_analyzer.py \
+    simt_ipdom_to_mem.py \
+    build_simt_kernel.sh; then
+    pass "RTL and metadata tool files present"
 else
-    echo "One or more RTL files are missing."
+    echo "One or more required files are missing."
     exit 1
 fi
 
@@ -272,22 +247,18 @@ fi
 
 # ------------------------------------------------------------
 # 4. Uniform kernel
-#
-# A uniform kernel does not require divergent branch metadata.
 # ------------------------------------------------------------
 
 echo
 echo "[4/12] Running uniform kernel test..."
 
-if check_files \
-    simt_uniform_kernel_runner_tb.v \
-    simt_uniform_kernel.asm; then
-
-    write_empty_lookup
+if check_files simt_uniform_kernel_runner_tb.v simt_uniform_kernel.asm; then
+    write_empty_metadata
 
     if python3 assembler.py simt_uniform_kernel.asm \
+        -o simt_uniform_kernel.hex \
+        --listing "$LOG_DIR/simt_uniform_kernel.lst" \
         >"$LOG_DIR/uniform_assembler.log" 2>&1; then
-
         run_testbench \
             "UNIFORM_KERNEL" \
             "simt_uniform_kernel_runner_tb.v" \
@@ -303,29 +274,21 @@ fi
 # ------------------------------------------------------------
 # 5. Divergent kernel
 #
-# Generates branch reconvergence metadata and lookup RTL.
+# build_simt_kernel.sh generates and loads this kernel's
+# branch/JOIN metadata memory files before simulation.
 # ------------------------------------------------------------
 
 echo
 echo "[5/12] Running divergent kernel test..."
 
-if check_files \
-    simt_divergent_kernel_runner_tb.v \
-    simt_divergent_kernel.asm \
-    build_simt_kernel.sh; then
-
-    if ./build_simt_kernel.sh simt_divergent_kernel.asm \
+if check_files simt_divergent_kernel_runner_tb.v simt_divergent_kernel.asm; then
+    if bash ./build_simt_kernel.sh simt_divergent_kernel.asm \
         >"$LOG_DIR/divergent_build.log" 2>&1; then
-
-        if [[ -f simt_ipdom_lookup.v ]]; then
-            run_testbench \
-                "DIVERGENT_KERNEL" \
-                "simt_divergent_kernel_runner_tb.v" \
-                "ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED"
-        else
-            cat "$LOG_DIR/divergent_build.log"
-            fail "DIVERGENT_KERNEL - lookup RTL not generated"
-        fi
+        cat "$LOG_DIR/divergent_build.log"
+        run_testbench \
+            "DIVERGENT_KERNEL" \
+            "simt_divergent_kernel_runner_tb.v" \
+            "ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED"
     else
         cat "$LOG_DIR/divergent_build.log"
         fail "DIVERGENT_KERNEL - build"
@@ -341,23 +304,14 @@ fi
 echo
 echo "[6/12] Running nested divergent kernel test..."
 
-if check_files \
-    simt_nested_kernel_runner_tb.v \
-    simt_nested_kernel.asm \
-    build_simt_kernel.sh; then
-
-    if ./build_simt_kernel.sh simt_nested_kernel.asm \
+if check_files simt_nested_kernel_runner_tb.v simt_nested_kernel.asm; then
+    if bash ./build_simt_kernel.sh simt_nested_kernel.asm \
         >"$LOG_DIR/nested_build.log" 2>&1; then
-
-        if [[ -f simt_ipdom_lookup.v ]]; then
-            run_testbench \
-                "NESTED_DIVERGENT_KERNEL" \
-                "simt_nested_kernel_runner_tb.v" \
-                "ALL ASSEMBLED NESTED KERNEL CHECKS PASSED"
-        else
-            cat "$LOG_DIR/nested_build.log"
-            fail "NESTED_DIVERGENT_KERNEL - lookup RTL not generated"
-        fi
+        cat "$LOG_DIR/nested_build.log"
+        run_testbench \
+            "NESTED_DIVERGENT_KERNEL" \
+            "simt_nested_kernel_runner_tb.v" \
+            "ALL ASSEMBLED NESTED KERNEL CHECKS PASSED"
     else
         cat "$LOG_DIR/nested_build.log"
         fail "NESTED_DIVERGENT_KERNEL - build"
@@ -369,18 +323,15 @@ fi
 # ------------------------------------------------------------
 # 7. Uniform branch and JOIN ownership regression
 #
-# Reuses the nested kernel instructions and generated
-# IPDOM/JOIN metadata.
+# Uses the nested kernel's generated metadata. Do not replace
+# those files before this test.
 # ------------------------------------------------------------
 
 echo
 echo "[7/12] Running uniform branch JOIN regression..."
 
-if check_files \
-    simt_uniform_branch_tb.v \
-    simt_nested_kernel.hex \
-    simt_ipdom_lookup.v; then
-
+if check_files simt_uniform_branch_tb.v simt_nested_kernel.hex \
+    "$BRANCH_METADATA" "$JOIN_METADATA"; then
     run_testbench \
         "UNIFORM_BRANCH_JOIN" \
         "simt_uniform_branch_tb.v" \
@@ -396,8 +347,7 @@ fi
 echo
 echo "[8/12] Running kernel halt regression..."
 
-# This test has no divergent branches, so empty metadata is sufficient.
-write_empty_lookup
+write_empty_metadata
 
 if check_files simt_kernel_halt_tb.v; then
     run_testbench \
@@ -409,17 +359,13 @@ else
 fi
 
 # ------------------------------------------------------------
-# ------------------------------------------------------------
 # 9. Illegal instruction handling regression
-#
-# Covers malformed encodings and verifies that illegal
-# instructions halt the core without architectural side effects.
 # ------------------------------------------------------------
 
 echo
 echo "[9/12] Running illegal instruction regression..."
 
-write_empty_lookup
+write_empty_metadata
 
 if check_files simt_illegal_instruction_tb.v; then
     run_testbench \
@@ -432,14 +378,12 @@ fi
 
 # ------------------------------------------------------------
 # 10. Lane ID execution regression
-#
-# Verifies each lane writes its own constant lane ID to rd.
 # ------------------------------------------------------------
 
 echo
 echo "[10/12] Running lane ID regression..."
 
-write_empty_lookup
+write_empty_metadata
 
 if check_files simt_lane_id_tb.v; then
     run_testbench \
@@ -452,24 +396,25 @@ fi
 
 # ------------------------------------------------------------
 # 11. Vector addition kernel regression
-#
-# Executes one vector element per lane using LANEID, ADDI and ADD.
 # ------------------------------------------------------------
 
 echo
 echo "[11/12] Running eight-lane vector addition kernel..."
 
-write_empty_lookup
+write_empty_metadata
 
 if check_files assembler.py simt_vector_add.asm simt_vector_add_tb.v; then
     if python3 assembler.py simt_vector_add.asm \
         -o simt_vector_add.hex \
-        --listing "$LOG_DIR/simt_vector_add.lst"; then
+        --listing "$LOG_DIR/simt_vector_add.lst" \
+        >"$LOG_DIR/vector_add_assembler.log" 2>&1; then
+        cat "$LOG_DIR/vector_add_assembler.log"
         run_testbench \
             "VECTOR_ADD" \
             "simt_vector_add_tb.v" \
             "ALL VECTOR ADD TESTS PASSED"
     else
+        cat "$LOG_DIR/vector_add_assembler.log"
         fail "VECTOR_ADD - assembly"
     fi
 else
@@ -483,15 +428,13 @@ fi
 echo
 echo "[12/12] Running divergence controller and negative tests..."
 
-# The controller unit test does not require generated metadata.
-write_empty_lookup
+write_empty_metadata
 
 run_testbench \
     "DIVERGENCE_CONTROLLER" \
     "divergence_controller_tb.v" \
     "ONE-LEVEL DIVERGENCE TEST COMPLETE"
 
-# Negative test must detect the expected missing-IPDOM fatal.
 run_missing_ipdom_test
 
 # ============================================================
@@ -505,7 +448,6 @@ echo "============================================================"
 
 echo "Passed: $PASS_COUNT"
 echo "Failed: $FAIL_COUNT"
-
 echo
 echo "Logs are available in:"
 echo "$LOG_DIR"

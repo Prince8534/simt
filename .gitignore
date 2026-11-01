@@ -8,6 +8,8 @@ __pycache__/
 *_regression_sim
 *_regression.log
 *_build.log
+*_sim.out
+ipdom_lookup_test
 nested_sim
 nested_tb_sim
 divergence_sim
@@ -28,11 +30,10 @@ execute_sim
 *.lxt
 *.lxt2
 
-# Generated assembler and analysis outputs
+# Generated assembler, analysis and metadata outputs
 *.hex
 *.lst
 *.ipdom
 *.cfg.json
-
-# Generated Verilog lookup table
-simt_ipdom_lookup.v
+simt_branch_metadata.mem
+simt_join_metadata.mem

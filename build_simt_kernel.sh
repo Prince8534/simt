@@ -1,13 +1,5 @@
-
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
-# ============================================================
-# SIMT KERNEL BUILD AND TEST
-# Supports:
-#   simt_divergent_kernel.asm
-#   simt_nested_kernel.asm
-# ============================================================
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <kernel.asm>" >&2
@@ -15,199 +7,84 @@ if [[ $# -ne 1 ]]; then
 fi
 
 KERNEL="$1"
-
 for tool in python3 iverilog vvp; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
+    command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: Required tool '$tool' was not found on PATH." >&2
         exit 2
-    fi
+    }
 done
 
-if [[ ! -f "$KERNEL" ]]; then
-    echo "ERROR: Kernel not found: $KERNEL" >&2
-    exit 1
-fi
-
-if [[ "$KERNEL" != *.asm ]]; then
-    echo "ERROR: Input must be an .asm file." >&2
-    exit 1
-fi
+[[ -f "$KERNEL" ]] || { echo "ERROR: Kernel not found: $KERNEL" >&2; exit 1; }
+[[ "$KERNEL" == *.asm ]] || { echo "ERROR: Input must be an .asm file." >&2; exit 1; }
 
 BASE="${KERNEL%.asm}"
 HEX="${BASE}.hex"
 LISTING="${BASE}.lst"
 IPDOM="${BASE}.ipdom"
-LOOKUP="simt_ipdom_lookup.v"
+BRANCH_MEM="simt_branch_metadata.mem"
+JOIN_MEM="simt_join_metadata.mem"
 TB="${BASE}_runner_tb.v"
 TOP="${BASE}_runner_tb"
 SIM="${BASE}_sim"
 LOG="${BASE}_sim.log"
 
-# ------------------------------------------------------------
-# Select the expected testbench success marker.
-# ------------------------------------------------------------
-
 case "$BASE" in
     simt_divergent_kernel)
-        EXPECTED_MARKER="ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED"
-        ;;
+        EXPECTED_MARKER="ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED" ;;
     simt_nested_kernel)
-        EXPECTED_MARKER="ALL ASSEMBLED NESTED KERNEL CHECKS PASSED"
-        ;;
+        EXPECTED_MARKER="ALL ASSEMBLED NESTED KERNEL CHECKS PASSED" ;;
     *)
         echo "ERROR: Unsupported kernel: $KERNEL" >&2
         echo "Supported kernels: simt_divergent_kernel.asm, simt_nested_kernel.asm" >&2
-        exit 2
-        ;;
+        exit 2 ;;
 esac
 
-for tool in assembler.py simt_ipdom_analyzer.py simt_ipdom_to_verilog.py; do
-    if [[ ! -f "$tool" ]]; then
-        echo "ERROR: Required tool missing: $tool" >&2
-        exit 1
-    fi
+for file in assembler.py simt_ipdom_analyzer.py simt_ipdom_to_mem.py \
+            simt_ipdom_lookup.v "$TB"; do
+    [[ -f "$file" ]] || { echo "ERROR: Required file missing: $file" >&2; exit 1; }
 done
 
-echo
-echo "========================================"
-echo " SIMT KERNEL BUILD AND TEST"
-echo "========================================"
-echo "Kernel: $KERNEL"
-echo "Expected marker: $EXPECTED_MARKER"
+echo "Building loadable-metadata kernel: $KERNEL"
 
-# ------------------------------------------------------------
-# 1. Assemble kernel
-# ------------------------------------------------------------
-
-echo
 echo "[1/4] Assemble kernel..."
-
 python3 assembler.py "$KERNEL" -o "$HEX" --listing "$LISTING"
+[[ -s "$HEX" && -s "$LISTING" ]] || { echo "ERROR: Assembly outputs missing." >&2; exit 1; }
 
-[[ -s "$HEX" ]] || {
-    echo "ERROR: HEX file missing or empty: $HEX" >&2
-    exit 1
-}
-
-[[ -s "$LISTING" ]] || {
-    echo "ERROR: Listing missing or empty: $LISTING" >&2
-    exit 1
-}
-
-# ------------------------------------------------------------
-# 2. Analyze IPDOM metadata
-# ------------------------------------------------------------
-
-echo
 echo "[2/4] Analyze IPDOM metadata..."
-
 python3 simt_ipdom_analyzer.py "$KERNEL"
+[[ -s "$IPDOM" ]] || { echo "ERROR: IPDOM metadata missing: $IPDOM" >&2; exit 1; }
 
-[[ -s "$IPDOM" ]] || {
-    echo "ERROR: IPDOM metadata missing: $IPDOM" >&2
+echo "[3/4] Generate loadable metadata memories..."
+python3 simt_ipdom_to_mem.py "$IPDOM" \
+    --branch-output "$BRANCH_MEM" \
+    --join-output "$JOIN_MEM"
+[[ -s "$BRANCH_MEM" && -s "$JOIN_MEM" ]] || {
+    echo "ERROR: Metadata memory files missing." >&2
     exit 1
 }
 
-python3 - "$IPDOM" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as f:
-    data = json.load(f)
-
-if data.get("format") != "simt-ipdom-v1":
-    raise SystemExit("ERROR: Unsupported IPDOM metadata format.")
-
-if data.get("hardware_metadata_safe") is not True:
-    raise SystemExit("ERROR: Metadata is not marked hardware-safe.")
-
-regions = data.get("regions")
-mapping = data.get("branch_to_reconvergence")
-
-if not isinstance(regions, list) or not isinstance(mapping, dict):
-    raise SystemExit("ERROR: Missing IPDOM regions or branch mapping.")
-
-for region in regions:
-    branch_pc = region.get("branch_pc")
-    reconvergence_pc = region.get("reconvergence_pc")
-
-    if branch_pc not in mapping:
-        raise SystemExit(f"ERROR: Missing mapping for branch {branch_pc}")
-
-    if mapping[branch_pc] != reconvergence_pc:
-        raise SystemExit(f"ERROR: Inconsistent mapping for {branch_pc}")
-
-print(f"Validated {len(regions)} structured IPDOM region(s).")
-PY
-
-# ------------------------------------------------------------
-# 3. Generate Verilog lookup
-# ------------------------------------------------------------
-
-echo
-echo "[3/4] Generate Verilog lookup..."
-
-python3 simt_ipdom_to_verilog.py "$IPDOM" -o "$LOOKUP"
-
-[[ -s "$LOOKUP" ]] || {
-    echo "ERROR: Lookup module missing: $LOOKUP" >&2
-    exit 1
-}
-
-if [[ ! -f "$TB" ]]; then
-    echo "ERROR: Matching testbench not found: $TB" >&2
-    exit 1
-fi
-
-# ------------------------------------------------------------
-# 4. Compile and run testbench
-# ------------------------------------------------------------
-
-echo
-echo "[4/4] Compile and run testbench..."
-
+echo "[4/4] Compile and simulate..."
 iverilog -g2012 -s "$TOP" -o "$SIM" \
-    simt_decoder.v \
-    simt_alu.v \
-    simt_lane.v \
-    simt_core.v \
-    simt_branch_compare.v \
-    simt_cfg_controller.v \
-    simt_frontend.v \
-    simt_instruction_memory.v \
-    simt_pc.v \
-    "$LOOKUP" \
-    ipdom_stack.v \
-    simt_split.v \
-    simt_join_control.v \
-    simt_divergence_controller.v \
-    simt_metrics.v \
-    simt_top.v \
-    "$TB"
+    simt_decoder.v simt_alu.v simt_lane.v simt_core.v \
+    simt_branch_compare.v simt_cfg_controller.v simt_frontend.v \
+    simt_instruction_memory.v simt_pc.v simt_ipdom_lookup.v \
+    ipdom_stack.v simt_split.v simt_join_control.v \
+    simt_divergence_controller.v simt_metrics.v simt_top.v "$TB"
 
-# Preserve the simulator's exit status while capturing output.
 SIM_STATUS=0
 vvp "$SIM" 2>&1 | tee "$LOG" || SIM_STATUS=$?
-
 if [[ "$SIM_STATUS" -ne 0 ]]; then
-    echo "ERROR: Simulation exited with status $SIM_STATUS." >&2
-    echo "Review $LOG for details." >&2
+    echo "ERROR: Simulation exited with status $SIM_STATUS. Review $LOG." >&2
     exit 1
 fi
-
-if ! grep -Fq "$EXPECTED_MARKER" "$LOG"; then
-    echo "ERROR: Expected testbench success message not found." >&2
-    echo "Expected: $EXPECTED_MARKER" >&2
-    echo "Review $LOG for failed assertions." >&2
+grep -Fq "$EXPECTED_MARKER" "$LOG" || {
+    echo "ERROR: Expected marker not found: $EXPECTED_MARKER" >&2
     exit 1
-fi
+}
 
-echo
-echo "========================================"
-echo " BUILD AND SIMULATION PASSED"
-echo "========================================"
-echo "HEX:      $HEX"
-echo "Listing:  $LISTING"
-echo "IPDOM:    $IPDOM"
-echo "Lookup:   $LOOKUP"
-echo "Test log: $LOG"
+echo "BUILD AND SIMULATION PASSED"
+echo "HEX: $HEX"
+echo "IPDOM JSON: $IPDOM"
+echo "Branch metadata: $BRANCH_MEM"
+echo "JOIN metadata: $JOIN_MEM"
+echo "Simulation log: $LOG"
