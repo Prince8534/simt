@@ -1,0 +1,5 @@
+kernel_id,kernel,cycles,useful_lane_cycles,masked_lane_cycles,total_lane_cycles,calculated_efficiency_percent,reported_efficiency_percent,ideal_packed_cycles_lower_bound
+UNIFORM_KERNEL,Uniform,4,32,0,32,100.00,100,4
+DIVERGENT_KERNEL,Divergent,6,32,16,48,66.67,66,4
+NESTED_DIVERGENT_KERNEL,Nested divergent,11,42,46,88,47.73,47,6
+VECTOR_ADD,Vector addition,5,40,0,40,100.00,100,5

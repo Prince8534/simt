@@ -37,4 +37,8 @@ execute_sim
 *.cfg.json
 simt_branch_metadata.mem
 simt_join_metadata.mem
+
+# Generated directories
+/build/
 regression_build/
+/waveforms/

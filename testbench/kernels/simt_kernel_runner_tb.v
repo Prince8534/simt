@@ -71,7 +71,7 @@ module simt_kernel_runner_tb;
         reset = 0;
 
         $readmemh(
-            "simt_kernel.hex",
+            "build/kernels/simt_kernel.hex",
             dut.frontend.instruction_memory.memory
         );
 
