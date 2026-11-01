@@ -228,7 +228,7 @@ echo "============================================================"
 # ------------------------------------------------------------
 
 echo
-echo "[1/10] Checking required tools..."
+echo "[1/12] Checking required tools..."
 
 for tool in python3 iverilog vvp; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -244,7 +244,7 @@ pass "Required tools available"
 # ------------------------------------------------------------
 
 echo
-echo "[2/10] Checking RTL source files..."
+echo "[2/12] Checking RTL source files..."
 
 if check_common_sources; then
     pass "RTL source files present"
@@ -258,7 +258,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[3/10] Running Python tests..."
+echo "[3/12] Running Python tests..."
 
 PYTHON_LOG="$LOG_DIR/python_tests.log"
 
@@ -277,7 +277,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[4/10] Running uniform kernel test..."
+echo "[4/12] Running uniform kernel test..."
 
 if check_files \
     simt_uniform_kernel_runner_tb.v \
@@ -307,7 +307,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[5/10] Running divergent kernel test..."
+echo "[5/12] Running divergent kernel test..."
 
 if check_files \
     simt_divergent_kernel_runner_tb.v \
@@ -339,7 +339,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[6/10] Running nested divergent kernel test..."
+echo "[6/12] Running nested divergent kernel test..."
 
 if check_files \
     simt_nested_kernel_runner_tb.v \
@@ -374,7 +374,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[7/10] Running uniform branch JOIN regression..."
+echo "[7/12] Running uniform branch JOIN regression..."
 
 if check_files \
     simt_uniform_branch_tb.v \
@@ -394,7 +394,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[8/10] Running kernel halt regression..."
+echo "[8/12] Running kernel halt regression..."
 
 # This test has no divergent branches, so empty metadata is sufficient.
 write_empty_lookup
@@ -417,7 +417,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[9/10] Running illegal instruction regression..."
+echo "[9/12] Running illegal instruction regression..."
 
 write_empty_lookup
 
@@ -430,11 +430,58 @@ else
     fail "ILLEGAL_INSTRUCTION - testbench missing"
 fi
 
-# 10. Controller unit test and negative test
+# ------------------------------------------------------------
+# 10. Lane ID execution regression
+#
+# Verifies each lane writes its own constant lane ID to rd.
 # ------------------------------------------------------------
 
 echo
-echo "[10/10] Running divergence controller and negative tests..."
+echo "[10/12] Running lane ID regression..."
+
+write_empty_lookup
+
+if check_files simt_lane_id_tb.v; then
+    run_testbench \
+        "LANE_ID" \
+        "simt_lane_id_tb.v" \
+        "ALL LANE ID TESTS PASSED"
+else
+    fail "LANE_ID - testbench missing"
+fi
+
+# ------------------------------------------------------------
+# 11. Vector addition kernel regression
+#
+# Executes one vector element per lane using LANEID, ADDI and ADD.
+# ------------------------------------------------------------
+
+echo
+echo "[11/12] Running eight-lane vector addition kernel..."
+
+write_empty_lookup
+
+if check_files assembler.py simt_vector_add.asm simt_vector_add_tb.v; then
+    if python3 assembler.py simt_vector_add.asm \
+        -o simt_vector_add.hex \
+        --listing "$LOG_DIR/simt_vector_add.lst"; then
+        run_testbench \
+            "VECTOR_ADD" \
+            "simt_vector_add_tb.v" \
+            "ALL VECTOR ADD TESTS PASSED"
+    else
+        fail "VECTOR_ADD - assembly"
+    fi
+else
+    fail "VECTOR_ADD - required source file missing"
+fi
+
+# ------------------------------------------------------------
+# 12. Controller unit test and negative test
+# ------------------------------------------------------------
+
+echo
+echo "[12/12] Running divergence controller and negative tests..."
 
 # The controller unit test does not require generated metadata.
 write_empty_lookup

@@ -177,6 +177,10 @@ def encode(stmt, labels):
         f3 = {'tmc': 0, 'split': 1, 'join': 2}[m]
         return (f3 << 12) | OP['SIMT']
 
+    if m == 'laneid':
+        count(1)
+        return (3 << 12) | (r(0) << 7) | OP['SIMT']
+
     if m == 'nop':
         count(0); return 0x00000013
 

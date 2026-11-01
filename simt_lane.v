@@ -2,6 +2,8 @@ module simt_lane (
     input wire clk,
     input wire reset,
     input wire thread_enable,
+    input wire [2:0] lane_id,
+    input wire lane_id_write,
 
     input wire [4:0] rs1,
     input wire [4:0] rs2,
@@ -104,10 +106,13 @@ module simt_lane (
         end
 
         else if (thread_enable &&
-                 reg_write &&
+                 (reg_write || lane_id_write) &&
                  (rd != 5'd0)) begin
 
-            registers[rd] <= alu_result;
+            if (lane_id_write)
+                registers[rd] <= {29'b0, lane_id};
+            else
+                registers[rd] <= alu_result;
 
         end
 

@@ -11,6 +11,7 @@ module simt_core (
     input wire [31:0] immediate,
 
     input wire reg_write,
+    input wire lane_id_write,
     input wire [7:0] thread_mask,
 
     output wire [31:0] lane_result [0:7],
@@ -26,12 +27,16 @@ module simt_core (
 
         for (lane = 0; lane < 8; lane = lane + 1) begin : LANES
 
+            localparam [2:0] LANE_ID = lane;
+
             simt_lane lane_unit (
 
                 .clk(clk),
                 .reset(reset),
 
                 .thread_enable(thread_mask[lane]),
+                .lane_id(LANE_ID),
+                .lane_id_write(lane_id_write),
 
                 .rs1(rs1),
                 .rs2(rs2),

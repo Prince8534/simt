@@ -86,6 +86,7 @@ module simt_top (
     wire tmc;
     wire split_instr;
     wire join_instr;
+    wire lane_id_instr;
 
     wire fence;
     wire ecall;
@@ -110,6 +111,7 @@ module simt_top (
         .tmc(tmc),
         .split(split_instr),
         .join_instr(join_instr),
+        .lane_id_instr(lane_id_instr),
         .fence(fence),
         .ecall(ecall),
         .ebreak(ebreak),
@@ -149,7 +151,14 @@ module simt_top (
             !branch &&
             !join_instr &&
             !split_instr &&
-            !tmc
+            !tmc &&
+            !lane_id_instr
+        ),
+        .lane_id_write(
+            !halted &&
+            !ebreak &&
+            !illegal &&
+            lane_id_instr
         ),
         .thread_mask(thread_mask_reg),
         .lane_result(lane_result),

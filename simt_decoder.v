@@ -31,6 +31,7 @@ module simt_decoder (
     output reg         tmc,
     output reg         split,
     output reg         join_instr,
+    output reg         lane_id_instr,
 
     // Special instructions
     output reg         fence,
@@ -137,6 +138,7 @@ module simt_decoder (
         tmc         = 1'b0;
         split       = 1'b0;
         join_instr        = 1'b0;
+        lane_id_instr     = 1'b0;
 
         fence       = 1'b0;
         ecall       = 1'b0;
@@ -519,6 +521,17 @@ module simt_decoder (
                         join_instr = 1'b1;
                     end
 
+                    3'b011: begin
+                        // LANEID rd: write the executing lane's ID to rd.
+                        // rs1 and rs2 are reserved and must be zero.
+                        if ((instruction[31:25] == 7'b0000000) &&
+                            (instruction[24:20] == 5'b00000) &&
+                            (instruction[19:15] == 5'b00000))
+                            lane_id_instr = 1'b1;
+                        else
+                            illegal = 1'b1;
+                    end
+
                     default:
                         illegal = 1'b1;
 
@@ -558,6 +571,7 @@ module simt_decoder (
             tmc         = 1'b0;
             split       = 1'b0;
             join_instr  = 1'b0;
+            lane_id_instr = 1'b0;
 
             fence       = 1'b0;
             ecall       = 1'b0;
