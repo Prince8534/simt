@@ -221,7 +221,8 @@ if check_common_sources && check_files \
     assembler.py \
     simt_ipdom_analyzer.py \
     simt_ipdom_to_mem.py \
-    build_simt_kernel.sh; then
+    build_simt_kernel.sh \
+    simt_performance_analyzer.py; then
     pass "RTL and metadata tool files present"
 else
     echo "One or more required files are missing."
@@ -436,6 +437,27 @@ run_testbench \
     "ONE-LEVEL DIVERGENCE TEST COMPLETE"
 
 run_missing_ipdom_test
+
+# ------------------------------------------------------------
+# 13. SIMT performance analysis
+# ------------------------------------------------------------
+
+echo
+echo "[13/13] Validating kernel metrics and generating performance reports..."
+
+if [[ "$FAIL_COUNT" -eq 0 ]]; then
+    if python3 simt_performance_analyzer.py \
+        --log-dir "$LOG_DIR" \
+        --lanes 8 \
+        --csv simt_performance.csv \
+        --markdown simt_performance_report.md; then
+        pass "SIMT performance analysis"
+    else
+        fail "SIMT performance analysis"
+    fi
+else
+    echo "[SKIP] Performance analysis skipped because earlier regression stages failed."
+fi
 
 # ============================================================
 # FINAL SUMMARY
