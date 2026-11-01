@@ -145,16 +145,25 @@ module simt_top (
     );
 
     // --------------------------------------------------------
-    // COMPILER-GENERATED IPDOM LOOKUP
+    // COMPILER-GENERATED IPDOM + JOIN LOOKUP
     // --------------------------------------------------------
 
     wire [31:0] reconvergence_pc;
     wire metadata_found;
 
+    wire [31:0] join_owner_branch_pc;
+    wire [31:0] join_reconvergence_pc;
+    wire join_metadata_found;
+
     simt_ipdom_lookup ipdom_lookup (
         .branch_pc(current_pc),
         .reconvergence_pc(reconvergence_pc),
-        .metadata_found(metadata_found)
+        .metadata_found(metadata_found),
+
+        .join_pc(current_pc),
+        .join_owner_branch_pc(join_owner_branch_pc),
+        .join_reconvergence_pc(join_reconvergence_pc),
+        .join_metadata_found(join_metadata_found)
     );
 
     // --------------------------------------------------------
@@ -195,16 +204,25 @@ module simt_top (
     simt_divergence_controller divergence_controller (
         .clk(clk),
         .reset(reset),
+
         .split(cfg_split),
         .join_instr(join_instr),
+
         .thread_mask(thread_mask_reg),
         .predicate_mask(predicate_mask),
+
         .current_pc(current_pc),
         .taken_pc(taken_pc),
         .deferred_pc(deferred_pc),
         .reconvergence_pc(reconvergence_pc),
+
+        .join_owner_branch_pc(join_owner_branch_pc),
+        .join_reconvergence_pc(join_reconvergence_pc),
+        .join_metadata_found(join_metadata_found),
+
         .next_thread_mask(divergence_next_mask),
         .next_pc(divergence_next_pc),
+
         .stack_push(stack_push),
         .stack_pop(stack_pop)
     );
@@ -248,8 +266,6 @@ module simt_top (
     // --------------------------------------------------------
     // SIMULATION-TIME IPDOM SAFETY CHECK
     // --------------------------------------------------------
-    // A divergent split must have compiler-generated metadata.
-    // This check is excluded from synthesis.
 
 `ifndef SYNTHESIS
     always @(posedge clk) begin
@@ -263,7 +279,10 @@ module simt_top (
             $display("Predicate mask:   %08b", predicate_mask);
             $display("Lookup PC:        0x%08h", current_pc);
             $display("========================================");
-            $fatal(1, "Cannot execute divergent split without IPDOM metadata");
+            $fatal(
+                1,
+                "Cannot execute divergent split without IPDOM metadata"
+            );
         end
     end
 `endif

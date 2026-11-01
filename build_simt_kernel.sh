@@ -1,5 +1,13 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
+# ============================================================
+# SIMT KERNEL BUILD AND TEST
+# Supports:
+#   simt_divergent_kernel.asm
+#   simt_nested_kernel.asm
+# ============================================================
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <kernel.asm>" >&2
@@ -35,6 +43,24 @@ TOP="${BASE}_runner_tb"
 SIM="${BASE}_sim"
 LOG="${BASE}_sim.log"
 
+# ------------------------------------------------------------
+# Select the expected testbench success marker.
+# ------------------------------------------------------------
+
+case "$BASE" in
+    simt_divergent_kernel)
+        EXPECTED_MARKER="ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED"
+        ;;
+    simt_nested_kernel)
+        EXPECTED_MARKER="ALL ASSEMBLED NESTED KERNEL CHECKS PASSED"
+        ;;
+    *)
+        echo "ERROR: Unsupported kernel: $KERNEL" >&2
+        echo "Supported kernels: simt_divergent_kernel.asm, simt_nested_kernel.asm" >&2
+        exit 2
+        ;;
+esac
+
 for tool in assembler.py simt_ipdom_analyzer.py simt_ipdom_to_verilog.py; do
     if [[ ! -f "$tool" ]]; then
         echo "ERROR: Required tool missing: $tool" >&2
@@ -47,9 +73,15 @@ echo "========================================"
 echo " SIMT KERNEL BUILD AND TEST"
 echo "========================================"
 echo "Kernel: $KERNEL"
+echo "Expected marker: $EXPECTED_MARKER"
+
+# ------------------------------------------------------------
+# 1. Assemble kernel
+# ------------------------------------------------------------
 
 echo
 echo "[1/4] Assemble kernel..."
+
 python3 assembler.py "$KERNEL" -o "$HEX" --listing "$LISTING"
 
 [[ -s "$HEX" ]] || {
@@ -62,8 +94,13 @@ python3 assembler.py "$KERNEL" -o "$HEX" --listing "$LISTING"
     exit 1
 }
 
+# ------------------------------------------------------------
+# 2. Analyze IPDOM metadata
+# ------------------------------------------------------------
+
 echo
 echo "[2/4] Analyze IPDOM metadata..."
+
 python3 simt_ipdom_analyzer.py "$KERNEL"
 
 [[ -s "$IPDOM" ]] || {
@@ -103,8 +140,13 @@ for region in regions:
 print(f"Validated {len(regions)} structured IPDOM region(s).")
 PY
 
+# ------------------------------------------------------------
+# 3. Generate Verilog lookup
+# ------------------------------------------------------------
+
 echo
 echo "[3/4] Generate Verilog lookup..."
+
 python3 simt_ipdom_to_verilog.py "$IPDOM" -o "$LOOKUP"
 
 [[ -s "$LOOKUP" ]] || {
@@ -114,9 +156,12 @@ python3 simt_ipdom_to_verilog.py "$IPDOM" -o "$LOOKUP"
 
 if [[ ! -f "$TB" ]]; then
     echo "ERROR: Matching testbench not found: $TB" >&2
-    echo "Expected: $TB" >&2
     exit 1
 fi
+
+# ------------------------------------------------------------
+# 4. Compile and run testbench
+# ------------------------------------------------------------
 
 echo
 echo "[4/4] Compile and run testbench..."
@@ -140,10 +185,19 @@ iverilog -g2012 -s "$TOP" -o "$SIM" \
     simt_top.v \
     "$TB"
 
-vvp "$SIM" | tee "$LOG"
+# Preserve the simulator's exit status while capturing output.
+SIM_STATUS=0
+vvp "$SIM" 2>&1 | tee "$LOG" || SIM_STATUS=$?
 
-if ! grep -q "ALL ASSEMBLED NESTED KERNEL CHECKS PASSED" "$LOG"; then
+if [[ "$SIM_STATUS" -ne 0 ]]; then
+    echo "ERROR: Simulation exited with status $SIM_STATUS." >&2
+    echo "Review $LOG for details." >&2
+    exit 1
+fi
+
+if ! grep -Fq "$EXPECTED_MARKER" "$LOG"; then
     echo "ERROR: Expected testbench success message not found." >&2
+    echo "Expected: $EXPECTED_MARKER" >&2
     echo "Review $LOG for failed assertions." >&2
     exit 1
 fi
