@@ -160,6 +160,12 @@ module simt_vector_add_tb;
         check(efficiency_percent == 32'd100,
               "Vector-add lane efficiency is 100 percent");
 
+        // Emit the same metric summary format used by the other kernel tests.
+        $display("Sampled cycles       : %0d", total_cycles);
+        $display("Useful lane-cycles   : %0d", useful_lane_cycles);
+        $display("Masked lane-cycles   : %0d", masked_lane_cycles);
+        $display("Lane efficiency      : %0d%%", efficiency_percent);
+
         if (errors == 0)
             $display("ALL VECTOR ADD TESTS PASSED");
         else
