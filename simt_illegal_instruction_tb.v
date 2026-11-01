@@ -144,6 +144,21 @@ module simt_illegal_instruction_tb;
         // Malformed CUSTOM-0: funct3=111 is not defined.
         run_illegal_case(32'h0000700B, "BAD_CUSTOM0");
 
+        // SLLI requires funct7=0000000.
+        run_illegal_case(32'h02009193, "BAD_SLLI");
+
+        // SRLI/SRAI accepts only funct7=0000000 or 0100000.
+        run_illegal_case(32'h4200D193, "BAD_SRLI_SRAI");
+
+        // FENCE requires rd=0, rs1=0, and fm=0000 here.
+        run_illegal_case(32'h0000800F, "BAD_FENCE_RS1");
+        run_illegal_case(32'h0000008F, "BAD_FENCE_RD");
+        run_illegal_case(32'h1000000F, "BAD_FENCE_FM");
+
+        // ECALL and EBREAK require rd=0.
+        run_illegal_case(32'h000001F3, "BAD_ECALL_RD");
+        run_illegal_case(32'h001001F3, "BAD_EBREAK_RD");
+
         // Reset must clear both halt and the sticky fault.
         reset = 1'b1;
         @(posedge clk);

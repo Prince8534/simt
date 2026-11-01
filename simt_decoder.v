@@ -451,8 +451,13 @@ module simt_decoder (
 
             OPCODE_MISC_MEM: begin
 
-                // FENCE
-                if (funct3 == 3'b000) begin
+                // FENCE (base encoding only).
+                // rd and rs1 are reserved and must be zero.
+                // fm is reserved in this implementation and must be zero.
+                if ((funct3 == 3'b000) &&
+                    (instruction[11:7] == 5'b00000) &&
+                    (instruction[19:15] == 5'b00000) &&
+                    (instruction[31:28] == 4'b0000)) begin
                     fence = 1'b1;
                 end
                 else begin
@@ -470,10 +475,12 @@ module simt_decoder (
 
                 if (funct3 == 3'b000) begin
 
-                    if (instruction[31:20] == 12'b0)
+                    if ((instruction[31:20] == 12'b0) &&
+                        (instruction[11:7] == 5'b00000))
                         ecall = 1'b1;
 
-                    else if (instruction[31:20] == 12'b1)
+                    else if ((instruction[31:20] == 12'b1) &&
+                             (instruction[11:7] == 5'b00000))
                         ebreak = 1'b1;
 
                     else

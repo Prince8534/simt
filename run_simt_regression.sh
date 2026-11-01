@@ -228,7 +228,7 @@ echo "============================================================"
 # ------------------------------------------------------------
 
 echo
-echo "[1/9] Checking required tools..."
+echo "[1/10] Checking required tools..."
 
 for tool in python3 iverilog vvp; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -244,7 +244,7 @@ pass "Required tools available"
 # ------------------------------------------------------------
 
 echo
-echo "[2/9] Checking RTL source files..."
+echo "[2/10] Checking RTL source files..."
 
 if check_common_sources; then
     pass "RTL source files present"
@@ -258,7 +258,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[3/9] Running Python tests..."
+echo "[3/10] Running Python tests..."
 
 PYTHON_LOG="$LOG_DIR/python_tests.log"
 
@@ -277,7 +277,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[4/9] Running uniform kernel test..."
+echo "[4/10] Running uniform kernel test..."
 
 if check_files \
     simt_uniform_kernel_runner_tb.v \
@@ -307,7 +307,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[5/9] Running divergent kernel test..."
+echo "[5/10] Running divergent kernel test..."
 
 if check_files \
     simt_divergent_kernel_runner_tb.v \
@@ -339,7 +339,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[6/9] Running nested divergent kernel test..."
+echo "[6/10] Running nested divergent kernel test..."
 
 if check_files \
     simt_nested_kernel_runner_tb.v \
@@ -374,7 +374,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[7/9] Running uniform branch JOIN regression..."
+echo "[7/10] Running uniform branch JOIN regression..."
 
 if check_files \
     simt_uniform_branch_tb.v \
@@ -394,7 +394,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[8/9] Running kernel halt regression..."
+echo "[8/10] Running kernel halt regression..."
 
 # This test has no divergent branches, so empty metadata is sufficient.
 write_empty_lookup
@@ -409,11 +409,32 @@ else
 fi
 
 # ------------------------------------------------------------
-# 9. Controller unit test and negative test
+# ------------------------------------------------------------
+# 9. Illegal instruction handling regression
+#
+# Covers malformed encodings and verifies that illegal
+# instructions halt the core without architectural side effects.
 # ------------------------------------------------------------
 
 echo
-echo "[9/9] Running divergence controller and negative tests..."
+echo "[9/10] Running illegal instruction regression..."
+
+write_empty_lookup
+
+if check_files simt_illegal_instruction_tb.v; then
+    run_testbench \
+        "ILLEGAL_INSTRUCTION" \
+        "simt_illegal_instruction_tb.v" \
+        "ALL ILLEGAL INSTRUCTION TESTS PASSED (14 cases)"
+else
+    fail "ILLEGAL_INSTRUCTION - testbench missing"
+fi
+
+# 10. Controller unit test and negative test
+# ------------------------------------------------------------
+
+echo
+echo "[10/10] Running divergence controller and negative tests..."
 
 # The controller unit test does not require generated metadata.
 write_empty_lookup
