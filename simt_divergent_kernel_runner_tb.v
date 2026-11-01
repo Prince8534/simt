@@ -67,6 +67,10 @@ module simt_divergent_kernel_runner_tb;
         reset = 1;
         errors = 0;
 
+        // Capture the complete SIMT hierarchy for GTKWave analysis.
+        $dumpfile("waveforms/divergent_kernel.vcd");
+        $dumpvars(0, simt_divergent_kernel_runner_tb);
+
         $display("");
         $display("========================================");
         $display(" ASSEMBLED DIVERGENT SIMT KERNEL");

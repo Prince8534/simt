@@ -27,6 +27,8 @@ TB="${BASE}_runner_tb.v"
 TOP="${BASE}_runner_tb"
 SIM="${BASE}_sim"
 LOG="${BASE}_sim.log"
+WAVEFORM_DIR="waveforms"
+mkdir -p "$WAVEFORM_DIR"
 
 case "$BASE" in
     simt_divergent_kernel)

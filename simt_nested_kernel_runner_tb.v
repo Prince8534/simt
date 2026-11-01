@@ -71,6 +71,10 @@ module simt_nested_kernel_runner_tb;
         reset = 1'b1;
         errors = 0;
 
+        // Capture the complete SIMT hierarchy for GTKWave analysis.
+        $dumpfile("waveforms/nested_kernel.vcd");
+        $dumpvars(0, simt_nested_kernel_runner_tb);
+
         $display("");
         $display("========================================");
         $display(" ASSEMBLED NESTED SIMT KERNEL TEST");
