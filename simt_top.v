@@ -18,17 +18,29 @@ module simt_top (
     output wire [63:0] useful_lane_cycles,
     output wire [63:0] masked_lane_cycles,
     output wire [31:0] efficiency_percent,
-    output reg halted
+    output reg halted,
+    output reg illegal_instruction
 );
 
     reg [7:0] thread_mask_reg;
 
-    // Global kernel termination state.
+    // Global kernel termination and sticky illegal-instruction fault.
+    // The PC is held combinationally on the faulting cycle below;
+    // these status flags remain asserted until reset.
     always @(posedge clk) begin
-        if (reset)
-            halted <= 1'b0;
-        else if (!halted && ebreak)
-            halted <= 1'b1;
+        if (reset) begin
+            halted              <= 1'b0;
+            illegal_instruction <= 1'b0;
+        end
+        else if (!halted) begin
+            if (illegal) begin
+                halted              <= 1'b1;
+                illegal_instruction <= 1'b1;
+            end
+            else if (ebreak) begin
+                halted <= 1'b1;
+            end
+        end
     end
 
     wire [31:0] control_next_pc;
@@ -104,7 +116,7 @@ module simt_top (
         .illegal(illegal)
     );
 
-    assign branch_instr = branch;
+    assign branch_instr = branch && !illegal;
 
     wire [2:0] branch_type;
     assign branch_type = instruction[14:12];
@@ -132,6 +144,7 @@ module simt_top (
         .reg_write(
             !halted &&
             !ebreak &&
+            !illegal &&
             reg_write &&
             !branch &&
             !join_instr &&
@@ -195,7 +208,7 @@ module simt_top (
         .branch_immediate(immediate),
         .thread_mask(thread_mask_reg),
         .predicate_mask(predicate_mask),
-        .branch_instr(branch),
+        .branch_instr(branch && !illegal),
         .reconvergence_pc(reconvergence_pc),
         .taken_pc(taken_pc),
         .deferred_pc(deferred_pc),
@@ -243,7 +256,7 @@ module simt_top (
     // --------------------------------------------------------
 
     assign control_next_pc =
-        (halted || ebreak)
+        (halted || ebreak || illegal)
             ? current_pc
         : cfg_split
             ? divergence_next_pc
@@ -269,7 +282,7 @@ module simt_top (
     always @(posedge clk) begin
         if (reset)
             thread_mask_reg <= 8'b11111111;
-        else if (!halted && !ebreak)
+        else if (!halted && !ebreak && !illegal)
             thread_mask_reg <= control_next_mask;
     end
 

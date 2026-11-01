@@ -529,6 +529,33 @@ module simt_decoder (
 
         endcase
 
+        // ----------------------------------------------------
+        // ILLEGAL INSTRUCTION SAFETY OVERRIDE
+        // ----------------------------------------------------
+        // Keep the illegal flag asserted, but suppress every
+        // execution-control signal from a partially decoded
+        // instruction.
+        if (illegal) begin
+            immediate   = 32'b0;
+            instr_type  = TYPE_NONE;
+            alu_control = ALU_ADD;
+
+            reg_write   = 1'b0;
+            mem_read    = 1'b0;
+            mem_write   = 1'b0;
+
+            branch      = 1'b0;
+            jump        = 1'b0;
+            jalr        = 1'b0;
+
+            tmc         = 1'b0;
+            split       = 1'b0;
+            join_instr  = 1'b0;
+
+            fence       = 1'b0;
+            ecall       = 1'b0;
+            ebreak      = 1'b0;
+        end
     end
 
 endmodule
