@@ -199,7 +199,7 @@ echo "============================================================"
 # ------------------------------------------------------------
 
 echo
-echo "[1/12] Checking required tools..."
+echo "[1/13] Checking required tools..."
 
 for tool in python3 iverilog vvp; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -215,7 +215,7 @@ pass "Required tools available"
 # ------------------------------------------------------------
 
 echo
-echo "[2/12] Checking RTL and metadata tool files..."
+echo "[2/13] Checking RTL and metadata tool files..."
 
 if check_common_sources && check_files \
     assembler.py \
@@ -234,7 +234,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[3/12] Running Python tests..."
+echo "[3/13] Running Python tests..."
 
 PYTHON_LOG="$LOG_DIR/python_tests.log"
 
@@ -251,7 +251,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[4/12] Running uniform kernel test..."
+echo "[4/13] Running uniform kernel test..."
 
 if check_files simt_uniform_kernel_runner_tb.v simt_uniform_kernel.asm; then
     write_empty_metadata
@@ -280,7 +280,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[5/12] Running divergent kernel test..."
+echo "[5/13] Running divergent kernel test..."
 
 if check_files simt_divergent_kernel_runner_tb.v simt_divergent_kernel.asm; then
     if bash ./build_simt_kernel.sh simt_divergent_kernel.asm \
@@ -303,7 +303,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[6/12] Running nested divergent kernel test..."
+echo "[6/13] Running nested divergent kernel test..."
 
 if check_files simt_nested_kernel_runner_tb.v simt_nested_kernel.asm; then
     if bash ./build_simt_kernel.sh simt_nested_kernel.asm \
@@ -329,7 +329,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[7/12] Running uniform branch JOIN regression..."
+echo "[7/13] Running uniform branch JOIN regression..."
 
 if check_files simt_uniform_branch_tb.v simt_nested_kernel.hex \
     "$BRANCH_METADATA" "$JOIN_METADATA"; then
@@ -346,7 +346,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[8/12] Running kernel halt regression..."
+echo "[8/13] Running kernel halt regression..."
 
 write_empty_metadata
 
@@ -364,7 +364,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[9/12] Running illegal instruction regression..."
+echo "[9/13] Running illegal instruction regression..."
 
 write_empty_metadata
 
@@ -382,7 +382,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[10/12] Running lane ID regression..."
+echo "[10/13] Running lane ID regression..."
 
 write_empty_metadata
 
@@ -400,7 +400,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[11/12] Running eight-lane vector addition kernel..."
+echo "[11/13] Running eight-lane vector addition kernel..."
 
 write_empty_metadata
 
@@ -427,7 +427,7 @@ fi
 # ------------------------------------------------------------
 
 echo
-echo "[12/12] Running divergence controller and negative tests..."
+echo "[12/13] Running divergence controller and negative tests..."
 
 write_empty_metadata
 
