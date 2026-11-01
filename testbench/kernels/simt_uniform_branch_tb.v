@@ -176,7 +176,7 @@ module simt_uniform_branch_tb;
         // Use the compiler-generated nested-kernel instructions
         // and its matching IPDOM/JOIN metadata.
         $readmemh(
-            "simt_nested_kernel.hex",
+            "build/kernels/simt_nested_kernel.hex",
             dut.frontend.instruction_memory.memory
         );
 

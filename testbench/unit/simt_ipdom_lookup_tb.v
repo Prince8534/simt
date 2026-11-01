@@ -11,8 +11,8 @@ module simt_ipdom_lookup_tb;
     integer errors;
 
     simt_ipdom_lookup #(
-        .BRANCH_METADATA_FILE("simt_ipdom_lookup_test_branch.mem"),
-        .JOIN_METADATA_FILE("simt_ipdom_lookup_test_join.mem")
+        .BRANCH_METADATA_FILE("testdata/simt_ipdom_lookup_test_branch.mem"),
+        .JOIN_METADATA_FILE("testdata/simt_ipdom_lookup_test_join.mem")
     ) dut (
         .branch_pc(branch_pc),
         .reconvergence_pc(reconvergence_pc),

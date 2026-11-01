@@ -25,7 +25,7 @@ These are simulation results, not FPGA validation.
 
 ## Instruction support: assembler vs. processor
 
-**Assembler support, decoder recognition, and end-to-end processor support are different things.** `assembler.py` can encode a broader RV32I-style set than `simt_top` currently executes completely.
+**Assembler support, decoder recognition, and end-to-end processor support are different things.** `tools/assembler.py` can encode a broader RV32I-style set than `simt_top` currently executes completely.
 
 | Instruction/feature | Current status in integrated `simt_top` | Regression evidence |
 |---|---|---|
@@ -51,18 +51,34 @@ This is **not** a complete or compliant RV32I processor. Treat the integrated ke
 - Icarus Verilog (`iverilog` and `vvp`) for HDL simulation
 - GTKWave is optional for inspecting generated VCD waveforms
 
+## Repository layout
+
+- `rtl/` — synthesizable and simulation RTL modules.
+- `testbench/unit/` — focused module-level testbenches.
+- `testbench/integration/` — subsystem and top-level integration testbenches.
+- `testbench/kernels/` — assembled-kernel runner and behavior testbenches.
+- `kernels/` — example SIMT assembly programs.
+- `tools/` — assembler, IPDOM/performance analyzers, and Python tests.
+- `scripts/` — build, regression, and waveform helper scripts.
+- `testdata/` — checked-in IPDOM lookup memory fixtures.
+- `docs/` — technical report and development notes.
+- `reports/` — generated performance CSV and Markdown reports.
+- `build/` — generated HEX, listing, metadata, logs, and waveform files.
+
+Build outputs are generated under `build/`; performance reports are stored under `reports/`.
+
 ## Run tests
 
 Run all discovered Python unit tests:
 
 ```bash
-python3 -m unittest discover -v
+python3 -m unittest discover -s tools -p 'test_*.py' -v
 ```
 
 Run the complete regression:
 
 ```bash
-./run_simt_regression.sh
+./scripts/run_simt_regression.sh
 ```
 
 The regression script checks required tools and source files, runs Python tests, builds and simulates the example kernels, executes focused HDL regressions, checks the missing-IPDOM negative case, and validates performance logs before generating reports. It currently has 13 numbered stages.
@@ -70,7 +86,7 @@ The regression script checks required tools and source files, runs Python tests,
 Build and run a supported kernel with generated IPDOM metadata:
 
 ```bash
-./build_simt_kernel.sh simt_nested_kernel.asm
+./scripts/build_simt_kernel.sh kernels/simt_nested_kernel.asm
 ```
 
 The HDL regression requires both `iverilog` and `vvp` on `PATH`. The regression script exits with a clear error if either tool is missing.
@@ -84,11 +100,11 @@ The current memory record formats are:
 - `simt_branch_metadata.mem`: one 64-bit record per branch, `{branch_pc[31:0], reconvergence_pc[31:0]}`.
 - `simt_join_metadata.mem`: one 96-bit record per JOIN, `{join_pc[31:0], owner_branch_pc[31:0], reconvergence_pc[31:0]}`.
 
-The converter `simt_ipdom_to_mem.py` validates the supported metadata format and writes these files. This is **not** runtime kernel switching or a hardware metadata-loading interface. `$readmemh` behavior and memory inference are tool- and target-dependent; FPGA implementation has not been established.
+The converter `tools/simt_ipdom_to_mem.py` validates the supported metadata format and writes these files. This is **not** runtime kernel switching or a hardware metadata-loading interface. `$readmemh` behavior and memory inference are tool- and target-dependent; FPGA implementation has not been established.
 
 ## Reported simulation metrics
 
-The performance analyzer validates the kernel logs and generates `simt_performance.csv` and `simt_performance_report.md`.
+The performance analyzer validates the kernel logs and generates `reports/simt_performance.csv` and `reports/simt_performance_report.md`.
 
 | Kernel | Sampled cycles | Useful lane-cycles | Masked lane-cycles | Efficiency |
 |---|---:|---:|---:|---:|
@@ -103,16 +119,16 @@ These values are simulation results, not physical timing, throughput, power, or 
 
 ## Waveform generation
 
-The divergent and nested kernel runner testbenches include VCD dump instrumentation. The kernel build/regression flow creates a `waveforms/` directory and writes:
+The divergent and nested kernel runner testbenches include VCD dump instrumentation. The kernel build/regression flow creates a `build/waveforms/` directory and writes:
 
-- `waveforms/divergent_kernel.vcd`
-- `waveforms/nested_kernel.vcd`
+- `build/waveforms/divergent_kernel.vcd`
+- `build/waveforms/nested_kernel.vcd`
 
 Inspect them with GTKWave:
 
 ```bash
-gtkwave waveforms/divergent_kernel.vcd
-gtkwave waveforms/nested_kernel.vcd
+gtkwave build/waveforms/divergent_kernel.vcd
+gtkwave build/waveforms/nested_kernel.vcd
 ```
 
 Waveform files are generated artifacts and are ignored by Git.
@@ -135,7 +151,7 @@ The standalone modules and alternative control-path testbenches are useful for i
 
 The repository includes a 27-page PDF showing selected modules' Verilog ports in an IC-style layout: inputs on the left, outputs on the right, and bus widths beside signals.
 
-**[Open the IC-style Verilog pin diagrams](docs/simt_ic_style_pin_diagrams.pdf)**
+**[Open the IC-style Verilog pin diagrams](docs/pin_diagrams/simt_ic_style_pin_diagrams.pdf)**
 
 These are *logical module interfaces*, not physical IC pin numbers. They are useful for understanding module connections and explaining the design in a presentation or report.
 
@@ -185,15 +201,15 @@ The project contains both the integrated processor path and standalone/alternati
 | File/module | Function |
 |---|---|
 | `simt_metrics` | Counts sampled cycles, useful lane-cycles, and masked lane-cycles, then calculates lane efficiency. |
-| `assembler.py` | Converts the project's assembly syntax and supported instruction encodings into machine-code HEX and a listing. |
-| `simt_ipdom_analyzer.py` | Analyzes the project's structured forward-branch/JOIN convention and emits IPDOM metadata; it is not a general arbitrary-CFG analyzer. |
-| `simt_ipdom_to_verilog.py` | Validates supported IPDOM metadata and generates a Verilog lookup module. |
-| `simt_ipdom_to_mem.py` | Validates IPDOM metadata and converts it into the branch and JOIN memory-file formats. |
-| `simt_performance_analyzer.py` | Validates kernel simulation metrics and generates CSV and Markdown performance reports. |
-| `run_simt_regression.sh` | Runs Python tests, assembled-kernel simulations, focused HDL regressions, negative tests, and performance-report validation. |
-| `build_simt_kernel.sh` | Assembles, analyzes, converts metadata, compiles, and simulates one supported kernel. |
-| `simt_*_tb.v`, `*_tb.v` | HDL testbenches for integrated kernels and standalone modules. |
-| `*_kernel.asm` | Example assembly kernels used by the regression suite. |
+| `tools/assembler.py` | Converts the project's assembly syntax and supported instruction encodings into machine-code HEX and a listing. |
+| `tools/simt_ipdom_analyzer.py` | Analyzes the project's structured forward-branch/JOIN convention and emits IPDOM metadata; it is not a general arbitrary-CFG analyzer. |
+| `tools/simt_ipdom_to_verilog.py` | Validates supported IPDOM metadata and generates a Verilog lookup module. |
+| `tools/simt_ipdom_to_mem.py` | Validates IPDOM metadata and converts it into the branch and JOIN memory-file formats. |
+| `tools/simt_performance_analyzer.py` | Validates kernel simulation metrics and generates CSV and Markdown performance reports. |
+| `scripts/run_simt_regression.sh` | Runs Python tests, assembled-kernel simulations, focused HDL regressions, negative tests, and performance-report validation. |
+| `scripts/build_simt_kernel.sh` | Assembles, analyzes, converts metadata, compiles, and simulates one supported kernel. |
+| `testbench/` | HDL testbenches for integrated kernels and standalone modules. |
+| `kernels/` | Example assembly kernels used by the regression suite. |
 
 ## Limitations
 
@@ -201,7 +217,7 @@ This is a learning prototype, not a general-purpose GPU or a complete RISC-V imp
 
 ## Technical report
 
-The repository's `SIMT_Core_Technical_Report.md` documents the architecture, implementation decisions, verification methodology, simulation metrics, limitations, and reproduction steps.
+The repository's `docs/SIMT_Core_Technical_Report.md` documents the architecture, implementation decisions, verification methodology, simulation metrics, limitations, and reproduction steps.
 
 ## Author
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-cd "$(dirname "$0")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 
 # ============================================================
 # MINI SIMT CORE REGRESSION SUITE
@@ -10,43 +11,43 @@ cd "$(dirname "$0")"
 
 PASS_COUNT=0
 FAIL_COUNT=0
-LOG_DIR="regression_build/logs"
-BRANCH_METADATA="simt_branch_metadata.mem"
-JOIN_METADATA="simt_join_metadata.mem"
+LOG_DIR="build/logs"
+BRANCH_METADATA="build/metadata/simt_branch_metadata.mem"
+JOIN_METADATA="build/metadata/simt_join_metadata.mem"
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" build/metadata build/kernels build/waveforms
 
 # ------------------------------------------------------------
 # Common RTL sources
 # ------------------------------------------------------------
 
 COMMON_SOURCES=(
-    simt_decoder.v
-    simt_alu.v
-    simt_lane.v
-    simt_core.v
-    simt_thread_mask.v
-    simt_split.v
-    ipdom_stack.v
-    simt_join_control.v
-    simt_divergence_controller.v
-    simt_pc.v
-    simt_instruction_memory.v
-    simt_frontend.v
-    simt_decode_stage.v
-    simt_frontend_decode.v
-    simt_execute_stage.v
-    simt_masked_execute.v
-    simt_branch_compare.v
-    simt_branch_execute.v
-    simt_cfg_controller.v
-    simt_branch_control.v
-    simt_control_flow.v
-    simt_branch_divergence.v
-    simt_execution_top.v
-    simt_metrics.v
-    simt_ipdom_lookup.v
-    simt_top.v
+    rtl/simt_decoder.v
+    rtl/simt_alu.v
+    rtl/simt_lane.v
+    rtl/simt_core.v
+    rtl/simt_thread_mask.v
+    rtl/simt_split.v
+    rtl/ipdom_stack.v
+    rtl/simt_join_control.v
+    rtl/simt_divergence_controller.v
+    rtl/simt_pc.v
+    rtl/simt_instruction_memory.v
+    rtl/simt_frontend.v
+    rtl/simt_decode_stage.v
+    rtl/simt_frontend_decode.v
+    rtl/simt_execute_stage.v
+    rtl/simt_masked_execute.v
+    rtl/simt_branch_compare.v
+    rtl/simt_branch_execute.v
+    rtl/simt_cfg_controller.v
+    rtl/simt_branch_control.v
+    rtl/simt_control_flow.v
+    rtl/simt_branch_divergence.v
+    rtl/simt_execution_top.v
+    rtl/simt_metrics.v
+    rtl/simt_ipdom_lookup.v
+    rtl/simt_top.v
 )
 
 pass() {
@@ -112,7 +113,7 @@ run_testbench() {
     echo "----------------------------------------"
 
     if ! iverilog -g2012 \
-        -s "${testbench%.v}" \
+        -s "$(basename "${testbench%.v}")" \
         -o "$executable" \
         "${COMMON_SOURCES[@]}" \
         "$testbench" \
@@ -145,7 +146,7 @@ run_testbench() {
 
 run_missing_ipdom_test() {
     local test_name="MISSING_IPDOM"
-    local testbench="simt_missing_ipdom_tb.v"
+    local testbench="testbench/kernels/simt_missing_ipdom_tb.v"
     local executable="$LOG_DIR/${test_name}.out"
     local compile_log="$LOG_DIR/${test_name}_compile.log"
     local simulation_log="$LOG_DIR/${test_name}_simulation.log"
@@ -218,11 +219,11 @@ echo
 echo "[2/13] Checking RTL and metadata tool files..."
 
 if check_common_sources && check_files \
-    assembler.py \
-    simt_ipdom_analyzer.py \
-    simt_ipdom_to_mem.py \
-    build_simt_kernel.sh \
-    simt_performance_analyzer.py; then
+    tools/assembler.py \
+    tools/simt_ipdom_analyzer.py \
+    tools/simt_ipdom_to_mem.py \
+    scripts/build_simt_kernel.sh \
+    tools/simt_performance_analyzer.py; then
     pass "RTL and metadata tool files present"
 else
     echo "One or more required files are missing."
@@ -238,7 +239,7 @@ echo "[3/13] Running Python tests..."
 
 PYTHON_LOG="$LOG_DIR/python_tests.log"
 
-if python3 -m unittest discover -v >"$PYTHON_LOG" 2>&1; then
+if python3 -m unittest discover -s tools -p 'test_*.py' -v >"$PYTHON_LOG" 2>&1; then
     cat "$PYTHON_LOG"
     pass "Python unit tests"
 else
@@ -253,16 +254,16 @@ fi
 echo
 echo "[4/13] Running uniform kernel test..."
 
-if check_files simt_uniform_kernel_runner_tb.v simt_uniform_kernel.asm; then
+if check_files testbench/kernels/simt_uniform_kernel_runner_tb.v kernels/simt_uniform_kernel.asm; then
     write_empty_metadata
 
-    if python3 assembler.py simt_uniform_kernel.asm \
-        -o simt_uniform_kernel.hex \
+    if python3 tools/assembler.py kernels/simt_uniform_kernel.asm \
+        -o build/kernels/simt_uniform_kernel.hex \
         --listing "$LOG_DIR/simt_uniform_kernel.lst" \
         >"$LOG_DIR/uniform_assembler.log" 2>&1; then
         run_testbench \
             "UNIFORM_KERNEL" \
-            "simt_uniform_kernel_runner_tb.v" \
+            "testbench/kernels/simt_uniform_kernel_runner_tb.v" \
             "ALL ASSEMBLED UNIFORM KERNEL CHECKS PASSED"
     else
         cat "$LOG_DIR/uniform_assembler.log"
@@ -275,20 +276,20 @@ fi
 # ------------------------------------------------------------
 # 5. Divergent kernel
 #
-# build_simt_kernel.sh generates and loads this kernel's
+# scripts/build_simt_kernel.sh generates and loads this kernel's
 # branch/JOIN metadata memory files before simulation.
 # ------------------------------------------------------------
 
 echo
 echo "[5/13] Running divergent kernel test..."
 
-if check_files simt_divergent_kernel_runner_tb.v simt_divergent_kernel.asm; then
-    if bash ./build_simt_kernel.sh simt_divergent_kernel.asm \
+if check_files testbench/kernels/simt_divergent_kernel_runner_tb.v kernels/simt_divergent_kernel.asm; then
+    if bash ./scripts/build_simt_kernel.sh kernels/simt_divergent_kernel.asm \
         >"$LOG_DIR/divergent_build.log" 2>&1; then
         cat "$LOG_DIR/divergent_build.log"
         run_testbench \
             "DIVERGENT_KERNEL" \
-            "simt_divergent_kernel_runner_tb.v" \
+            "testbench/kernels/simt_divergent_kernel_runner_tb.v" \
             "ALL ASSEMBLED DIVERGENT KERNEL CHECKS PASSED"
     else
         cat "$LOG_DIR/divergent_build.log"
@@ -305,13 +306,13 @@ fi
 echo
 echo "[6/13] Running nested divergent kernel test..."
 
-if check_files simt_nested_kernel_runner_tb.v simt_nested_kernel.asm; then
-    if bash ./build_simt_kernel.sh simt_nested_kernel.asm \
+if check_files testbench/kernels/simt_nested_kernel_runner_tb.v kernels/simt_nested_kernel.asm; then
+    if bash ./scripts/build_simt_kernel.sh kernels/simt_nested_kernel.asm \
         >"$LOG_DIR/nested_build.log" 2>&1; then
         cat "$LOG_DIR/nested_build.log"
         run_testbench \
             "NESTED_DIVERGENT_KERNEL" \
-            "simt_nested_kernel_runner_tb.v" \
+            "testbench/kernels/simt_nested_kernel_runner_tb.v" \
             "ALL ASSEMBLED NESTED KERNEL CHECKS PASSED"
     else
         cat "$LOG_DIR/nested_build.log"
@@ -331,11 +332,11 @@ fi
 echo
 echo "[7/13] Running uniform branch JOIN regression..."
 
-if check_files simt_uniform_branch_tb.v simt_nested_kernel.hex \
+if check_files testbench/kernels/simt_uniform_branch_tb.v build/kernels/simt_nested_kernel.hex \
     "$BRANCH_METADATA" "$JOIN_METADATA"; then
     run_testbench \
         "UNIFORM_BRANCH_JOIN" \
-        "simt_uniform_branch_tb.v" \
+        "testbench/kernels/simt_uniform_branch_tb.v" \
         "ALL UNIFORM BRANCH JOIN TESTS PASSED"
 else
     fail "UNIFORM_BRANCH_JOIN - required files missing"
@@ -350,10 +351,10 @@ echo "[8/13] Running kernel halt regression..."
 
 write_empty_metadata
 
-if check_files simt_kernel_halt_tb.v; then
+if check_files testbench/kernels/simt_kernel_halt_tb.v; then
     run_testbench \
         "KERNEL_HALT" \
-        "simt_kernel_halt_tb.v" \
+        "testbench/kernels/simt_kernel_halt_tb.v" \
         "ALL KERNEL HALT TESTS PASSED"
 else
     fail "KERNEL_HALT - testbench missing"
@@ -368,10 +369,10 @@ echo "[9/13] Running illegal instruction regression..."
 
 write_empty_metadata
 
-if check_files simt_illegal_instruction_tb.v; then
+if check_files testbench/kernels/simt_illegal_instruction_tb.v; then
     run_testbench \
         "ILLEGAL_INSTRUCTION" \
-        "simt_illegal_instruction_tb.v" \
+        "testbench/kernels/simt_illegal_instruction_tb.v" \
         "ALL ILLEGAL INSTRUCTION TESTS PASSED (14 cases)"
 else
     fail "ILLEGAL_INSTRUCTION - testbench missing"
@@ -386,10 +387,10 @@ echo "[10/13] Running lane ID regression..."
 
 write_empty_metadata
 
-if check_files simt_lane_id_tb.v; then
+if check_files testbench/kernels/simt_lane_id_tb.v; then
     run_testbench \
         "LANE_ID" \
-        "simt_lane_id_tb.v" \
+        "testbench/kernels/simt_lane_id_tb.v" \
         "ALL LANE ID TESTS PASSED"
 else
     fail "LANE_ID - testbench missing"
@@ -404,15 +405,15 @@ echo "[11/13] Running eight-lane vector addition kernel..."
 
 write_empty_metadata
 
-if check_files assembler.py simt_vector_add.asm simt_vector_add_tb.v; then
-    if python3 assembler.py simt_vector_add.asm \
-        -o simt_vector_add.hex \
+if check_files tools/assembler.py kernels/simt_vector_add.asm testbench/kernels/simt_vector_add_tb.v; then
+    if python3 tools/assembler.py kernels/simt_vector_add.asm \
+        -o build/kernels/simt_vector_add.hex \
         --listing "$LOG_DIR/simt_vector_add.lst" \
         >"$LOG_DIR/vector_add_assembler.log" 2>&1; then
         cat "$LOG_DIR/vector_add_assembler.log"
         run_testbench \
             "VECTOR_ADD" \
-            "simt_vector_add_tb.v" \
+            "testbench/kernels/simt_vector_add_tb.v" \
             "ALL VECTOR ADD TESTS PASSED"
     else
         cat "$LOG_DIR/vector_add_assembler.log"
@@ -433,7 +434,7 @@ write_empty_metadata
 
 run_testbench \
     "DIVERGENCE_CONTROLLER" \
-    "divergence_controller_tb.v" \
+    "testbench/unit/divergence_controller_tb.v" \
     "ONE-LEVEL DIVERGENCE TEST COMPLETE"
 
 run_missing_ipdom_test
@@ -446,11 +447,11 @@ echo
 echo "[13/13] Validating kernel metrics and generating performance reports..."
 
 if [[ "$FAIL_COUNT" -eq 0 ]]; then
-    if python3 simt_performance_analyzer.py \
+    if python3 tools/simt_performance_analyzer.py \
         --log-dir "$LOG_DIR" \
         --lanes 8 \
-        --csv simt_performance.csv \
-        --markdown simt_performance_report.md; then
+        --csv reports/simt_performance.csv \
+        --markdown reports/simt_performance_report.md; then
         pass "SIMT performance analysis"
     else
         fail "SIMT performance analysis"

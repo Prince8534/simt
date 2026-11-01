@@ -66,7 +66,7 @@ module simt_uniform_kernel_runner_tb;
         $display("========================================");
 
         $readmemh(
-            "simt_uniform_kernel.hex",
+            "build/kernels/simt_uniform_kernel.hex",
             dut.frontend.instruction_memory.memory
         );
 

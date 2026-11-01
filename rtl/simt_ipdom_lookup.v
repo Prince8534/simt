@@ -3,8 +3,8 @@
 // Branch record: {branch_pc[31:0], reconvergence_pc[31:0]}.
 // JOIN record:   {join_pc[31:0], owner_branch_pc[31:0], reconvergence_pc[31:0]}.
 module simt_ipdom_lookup #(
-    parameter BRANCH_METADATA_FILE = "simt_branch_metadata.mem",
-    parameter JOIN_METADATA_FILE   = "simt_join_metadata.mem",
+    parameter BRANCH_METADATA_FILE = "build/metadata/simt_branch_metadata.mem",
+    parameter JOIN_METADATA_FILE   = "build/metadata/simt_join_metadata.mem",
     parameter integer MAX_BRANCH_ENTRIES = 256,
     parameter integer MAX_JOIN_ENTRIES   = 256
 ) (

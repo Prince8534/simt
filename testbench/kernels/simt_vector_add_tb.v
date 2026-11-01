@@ -64,7 +64,7 @@ module simt_vector_add_tb;
         reset = 1'b1;
         errors = 0;
 
-        $readmemh("simt_vector_add.hex",
+        $readmemh("build/kernels/simt_vector_add.hex",
                   dut.frontend.instruction_memory.memory);
 
         repeat (2) @(posedge clk);
